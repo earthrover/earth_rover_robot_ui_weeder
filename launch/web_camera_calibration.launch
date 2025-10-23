@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="hardware_cameras" default="true" />
+
+    <arg name="standalone" default="false" />
+    <arg name="create_nodelet_managers" default="true"/>
+
+    <node pkg="web_video_server" type="web_video_server" name="web_video_server">
+        <param name="address"               value="127.0.0.1"/>
+    </node>
+
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+        <arg name="address"                 value="127.0.0.1"/>
+        <arg name="topics_glob"             value="[*]"/>
+        <arg name="services_glob"           value="[*]"/>
+    
+    </include>
+
+    <!-- <node pkg="nodelet" type="nodelet" name="nodelet_manager"></node> -->
+    <include file="$(find earth_rover_weeder_vision)/launch/stereo_system.launch">
+        <arg name="launch_cameras"                  value="$(arg hardware_cameras)"/>
+
+        <arg name="standalone"                value="$(arg standalone)"/>
+
+        <arg name="create_nodelet_managers"   value="$(arg create_nodelet_managers)"/>
+    </include>
+
+    <!-- ROS_NAMESPACE=/stereo roslaunch earth_rover_weeder_vision focus_camera.launch stereo:=true input:=image_color -->
+    <include file="$(find earth_rover_weeder_vision)/launch/focus_camera.launch" ns="stereo">
+        <arg name="stereo" value="true"/>
+        <arg name="input" value="image_color"/>
+    </include>
+
+
+    <!-- roslaunch earth_rover_weeder_vision calibrate_camera.launch stereo:=true input:=stereo -->
+    <include file="$(find earth_rover_weeder_vision)/launch/calibrate_camera.launch">
+        <arg name="stereo" value="true"/>
+        <arg name="input" value="stereo"/>
+    </include>
+
+    <!-- TODO: simple http server -->
+    <!-- python3 -m http.server -->
+</launch>
