@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="./eventemitter2_6.4.9.min.js"></script>
+    <script src="./roslib.min.js"></script>
+
+    <script>
+        // var module_ns = "/weeder/module9";
+        var module_ns = "";
+
+
+        async function wait_for_service(service) {
+            const new_call = () => {
+                setTimeout(async () => {
+                    await wait_for_service(service);
+                    resolve();
+                }, 500);
+            };
+
+            await new Promise((resolve) => {
+                service.ros.getServiceType(service.name,
+                    (type) => {
+                        if (type === "") { new_call(); }
+                        else { resolve(); }
+                    }, (err) => {
+                        new_call();
+                    });
+            });
+        }
+
+        function set_info(msg) {
+            info_elem = document.getElementById("info");
+
+            info_elem.textContent = msg;
+
+        }
+
+        function register_socket_debug() {
+            var old_cb = ros.socket.onmessage;
+            ros.socket.onmessage = (e) => {
+
+                if (e && e.data) {
+                    o = JSON.parse(e.data);
+                    console.log(o);
+                }
+                old_cb(e);
+            };
+            var old_send = ros.socket.__proto__.send.bind(ros.socket);
+            ros.socket.__proto__.send = (e) => { console.log(JSON.parse(e)); old_send(e); };
+        }
+
+
+        var ros = new ROSLIB.Ros();
+
+        var camera_interface_srv = null;
+
+        let enable_socket_debug = false;
+
+
+        ros.on('error', function (error) {
+            set_info("Connection error");
+            console.log('Error connecting to websocket server: ', error);
+        });
+
+        ros.on('close', function () {
+            set_info("Connection closed");
+            console.log('Connection to websocket server closed.');
+        });
+
+
+        // var host = window.location.hostname;
+        // if (window.location.protocol.startsWith("file")) { host = "localhost"; }
+        // ros.connect('ws://' + host + ':9090');
+
+
+        async function reset_action() {
+            let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/clear", serviceType: "std_srvs/Empty" });
+
+            const req = new ROSLIB.ServiceRequest({});
+
+            await wait_for_service(srv);
+
+            set_info("Resetting captured snapshots");
+
+            srv.callService(req, (res) => {
+                set_info("");
+            }, (err) => { set_info("Error resetting the snapshots: " + err); });
+        }
+
+        async function calibrate_action() {
+            let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/calibrate", serviceType: "std_srvs/Trigger" });
+
+            const req = new ROSLIB.ServiceRequest({});
+
+            await wait_for_service(srv);
+
+            set_info("Calibrating ...");
+
+            srv.callService(req, (res) => {
+                if (res.success) {
+                    set_info("Calibration finished (remember to save): " + res.message);
+                } else {
+                    set_info("Calibration finished with an error: " + res.message);
+                }
+            }, (err) => { set_info("Error calibrating: " + err); });
+        }
+
+        async function save_action() {
+            let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/calibrate", serviceType: "std_srvs/Trigger" });
+
+            const req = new ROSLIB.ServiceRequest({});
+
+            await wait_for_service(srv);
+
+            set_info("Saving calibration");
+
+            srv.callService(req, (res) => {
+                if (res.success) {
+                    set_info("Calibration saved successfully: " + res.message);
+                } else {
+                    set_info("An error occurred while saving: " + res.message);
+                }
+            }, (err) => { set_info("Error saving: " + err); });
+        }
+
+
+        async function get_freerun_exposure() {
+            const req = new ROSLIB.ServiceRequest({ command: 32, value: 0.0 });
+
+            await wait_for_service(camera_interface_srv);
+
+            return await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    if (res.success) {
+                        resolve(Number(res.response));
+                    } else {
+                        resolve(NaN);
+                    }
+                }, (err) => { resolve(NaN); });
+            });
+        }
+
+        async function set_exposure(event) {
+            event.target.disabled = true;
+
+            const req = new ROSLIB.ServiceRequest({ command: 22, value: Number(event.target.value) });
+
+            await wait_for_service(camera_interface_srv);
+
+            const result = await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    resolve(res.success);
+                }, (err) => { resolve(false); });
+            });
+
+            if (!result) { set_info("Unable to apply last exposure update"); }
+
+            event.target.disabled = false;
+        }
+
+    </script>
+
+    <style>
+        img {
+            float: left;
+            max-width: 50vw;
+            max-height: calc(100vh - 50px);
+        }
+
+        #images:not(.hidden) {
+            display: inline-block;
+            width: 100vw;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <span id="info"></span>
+    <div id="images" class="hidden">
+
+        <img id="img_left" src="/image/stream?topic=/camera_calibrator/output/left/image_rect_color&default_transport=compressed&quality=50" />
+        <img id="img_right" src="/image/stream?topic=/camera_calibrator/output/right/image_rect_color&default_transport=compressed&quality=50" />
+    </div>
+    <div id="controls" class="hidden">
+        <button id="reset" onclick="reset_action()">Reset</button>
+        <button id="calibrate" onclick="calibrate_action()">Calibrate</button>
+        <button id="save" onclick="save_action()">Save</button>
+
+        <label>Camera exposure <input id="camera_exposure" type="number" step="5" min="10" max="180"
+                placeholder="Unknown exposure" />
+            ms</label>
+    </div>
+
+    <script>
+
+
+        const host = window.location.protocol.startsWith("file") ? "localhost" : window.location.hostname;
+
+        ros.on('connection', async function () {
+            console.log('Connected to websocket server.');
+
+            if (enable_socket_debug) { register_socket_debug(); }
+
+            camera_interface_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/camera_interface_srv", serviceType: "earth_rover_weeder_msgs/StereoCameraInterface" });
+
+            const req = new ROSLIB.ServiceRequest({ command: 0, value: 0.0 });
+
+            set_info("Waiting for camera interface: " + camera_interface_srv.name);
+
+            console.log("Waiting for camera interface: " + camera_interface_srv.name);
+            await wait_for_service(camera_interface_srv);
+            console.log("Camera interface found");
+
+            set_info("Configuring camera");
+
+            camera_interface_srv.callService(req, (res) => {
+                set_info("");
+            }, (err) => { set_info("Error configuring the camera: " + err); });
+
+
+            const current_exposure = await get_freerun_exposure();
+
+            console.log(current_exposure);
+
+            if (isNaN(current_exposure) || current_exposure == 0) {
+                set_info("Unable to retrieve current camera exposure");
+                document.getElementById("camera_exposure").value = "";
+            } else {
+                document.getElementById("camera_exposure").value = current_exposure;
+            }
+
+            document.getElementById("camera_exposure").addEventListener("change", set_exposure);
+
+
+
+            document.getElementById("controls").classList.remove(["hidden"]);
+
+            document.getElementById("images").classList.remove(["hidden"]);
+        });
+
+        ros.connect('/rosbridge');
+    </script>
+</body>
+
+</html>
