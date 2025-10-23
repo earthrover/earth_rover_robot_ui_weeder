@@ -249,6 +249,10 @@
         });
 
         ros.connect('/rosbridge');
+
+        // Subscriber to keep the websocket connection alive
+        keepalive_topic = new ROSLIB.Topic ({ros: ros, name: "/camera_calibrator/output/left/camera_info", messageType: "sensor_msgs/CameraInfo"});
+        keepalive_topic.subscribe((msg)=> { /* DO NOTHING */ });
     </script>
 </body>
 
