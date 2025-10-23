@@ -13,7 +13,10 @@
         <arg name="address"                 value="127.0.0.1"/>
         <arg name="topics_glob"             value="[*]"/>
         <arg name="services_glob"           value="[*]"/>
-    
+
+        <arg name="websocket_ping_interval" value="5" />
+        <arg name="websocket_ping_timeout" value="10" />
+
     </include>
 
     <!-- <node pkg="nodelet" type="nodelet" name="nodelet_manager"></node> -->
