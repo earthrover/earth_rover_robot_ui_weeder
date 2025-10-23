@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="/common/eventemitter2_6.4.9.min.js"></script>
+    <script src="/common/roslib.min.js"></script>
+
+    <script>
+        // var module_ns = "/weeder/module9";
+        var module_ns = "";
+
+
+        async function wait_for_service(service) {
+            const new_call = () => {
+                setTimeout(async () => {
+                    await wait_for_service(service);
+                    resolve();
+                }, 500);
+            };
+
+            await new Promise((resolve) => {
+                service.ros.getServiceType(service.name,
+                    (type) => {
+                        if (type === "") { new_call(); }
+                        else { resolve(); }
+                    }, (err) => {
+                        new_call();
+                    });
+            });
+        }
+
+        function set_info(msg) {
+            info_elem = document.getElementById("info");
+
+            info_elem.textContent = msg;
+
+        }
+
+        function register_socket_debug() {
+            var old_cb = ros.socket.onmessage;
+            ros.socket.onmessage = (e) => {
+
+                if (e && e.data) {
+                    o = JSON.parse(e.data);
+                    console.log(o);
+                }
+                old_cb(e);
+            };
+            var old_send = ros.socket.__proto__.send.bind(ros.socket);
+            ros.socket.__proto__.send = (e) => { console.log(JSON.parse(e)); old_send(e); };
+        }
+
+
+        var ros = new ROSLIB.Ros();
+
+        var camera_interface_srv = null;
+
+        let enable_socket_debug = false;
+
+
+        ros.on('error', function (error) {
+            set_info("Connection error");
+            console.log('Error connecting to websocket server: ', error);
+        });
+
+        ros.on('close', function () {
+            set_info("Connection closed");
+            console.log('Connection to websocket server closed.');
+        });
+
+
+        async function get_freerun_exposure() {
+            const req = new ROSLIB.ServiceRequest({ command: 32, value: 0.0 });
+
+            await wait_for_service(camera_interface_srv);
+
+            return await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    if (res.success) {
+                        resolve(Number(res.response));
+                    } else {
+                        resolve(NaN);
+                    }
+                }, (err) => { resolve(NaN); });
+            });
+        }
+
+        async function set_exposure(event) {
+            event.target.disabled = true;
+
+            const req = new ROSLIB.ServiceRequest({ command: 22, value: Number(event.target.value) });
+
+            await wait_for_service(camera_interface_srv);
+
+            const result = await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    resolve(res.success);
+                }, (err) => { resolve(false); });
+            });
+
+            if (!result) { set_info("Unable to apply last exposure update"); }
+
+            event.target.disabled = false;
+        }
+
+
+        function create_image_url(topic) {
+            return '/image/stream?type=png&default_transport=raw&quality=100&topic=' + topic;
+        }
+
+        var left_focus_topic = new ROSLIB.Topic({ ros: ros, name: "/stereo/left/focus_analyzer/output/focus", messageType: "std_msgs/Float64" });
+        var right_focus_topic = new ROSLIB.Topic({ ros: ros, name: "/stereo/right/focus_analyzer/output/focus", messageType: "std_msgs/Float64" });
+
+        function update_focus_gen(selector) {
+            return (focus_msg) => { document.querySelector(selector).textContent = focus_msg.data; };
+        }
+
+        const update_focus_left = update_focus_gen("#left .img_info");
+        const update_focus_right = update_focus_gen("#right .img_info");
+
+
+        function image_selector_change(event) {
+            document.getElementById("img_left").src = create_image_url('/stereo/left/' + event.target.value);
+            document.getElementById("img_right").src = create_image_url('/stereo/right/' + event.target.value);
+
+            if (left_focus_topic.listenerCount() > 0) { left_focus_topic.unsubscribe(update_focus_left); }
+            if (right_focus_topic.listenerCount() > 0) { right_focus_topic.unsubscribe(update_focus_right); }
+
+            if (event.target.value.startsWith("image_")) {
+                left_focus_topic.subscribe(update_focus_left);
+                right_focus_topic.subscribe(update_focus_right);
+            }
+        }
+
+        function full_size_change(event) {
+            let images = document.getElementById("images");
+
+            if (event.target.checked) {
+                images.classList.add(['full_size'])
+            } else {
+                images.classList.remove(['full_size'])
+            }
+
+        }
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                if (left_focus_topic.listenerCount() > 0) { left_focus_topic.unsubscribe(update_focus_left); }
+                if (right_focus_topic.listenerCount() > 0) { right_focus_topic.unsubscribe(update_focus_right); }
+                return;
+            }
+
+            // Force valid state according to the inputs
+            let event = new Event("change", { target: image_selector });
+            image_selector.dispatchEvent(event);
+            event = new Event("change", { target: full_size_checkbox });
+            full_size_checkbox.dispatchEvent(event);
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            let event = new Event("visibilitychange");
+            document.dispatchEvent(event);
+        })
+    </script>
+
+    <style>
+        #images {
+            height: calc(100vh - 50px);
+            width: 100vw;
+            /* overflow: hidden; */
+        }
+
+        #images.full_size>.img_side>div {
+            height: calc(100vh - 50px);
+            width: 100vw;
+            overflow: scroll;
+        }
+
+        #images.full_size>.img_side>div>div {
+            display: inline-block;
+        }
+
+        #images .img_side {
+            display: inline-block;
+            float: left;
+        }
+
+        #images:not(.full_size) img {
+            max-width: 50vw;
+            max-height: calc(100vh - 50px);
+        }
+
+        #controls div {
+            display: inline-block;
+        }
+
+        div:has(~ #images:not(.full_size)) .only_fullsize {
+            display: none;
+        }
+
+        body {
+            margin: 0;
+            image-rendering: crisp-edges;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #images img,
+        #images .img_info {
+            display: block;
+        }
+
+        #images .img_side div div {
+            position: relative;
+            /* overflow: auto; */
+        }
+
+        #images svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        body:not(:has(#show_center:checked)) .center_mark {
+            display: none;
+        }
+
+        body:has(select > option[value^="focus_analyzer"]:checked) #images .img_info {
+            display: none;
+        }
+
+        body:has(input[type="radio"][value="left"]:checked) .full_size #right,
+        body:has(input[type="radio"][value="right"]:checked) .full_size #left {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <span id="info"></span>
+    <div id="controls" class="hidden">
+        <select id="image_selector">
+            <option value="focus_analyzer/output/image_mono" selected>Analyzer output</option>
+            <option value="image_mono">Mono</option>
+            <option value="image_color">Color</option>
+        </select>
+
+        <span>|</span>
+        <label><input id="full_size_checkbox" type="checkbox"> Full Size</label>
+
+        <div class="only_fullsize">
+            <span>|</span>
+            <label><input type="radio" name="side" value="left" checked /> left</label>
+            <label><input type="radio" name="side" value="right" /> right</label>
+        </div>
+
+        <span>|</span>
+        <label><input id="show_center" type="checkbox" checked> Show center</label>
+
+        <span>|</span>
+        <label>Camera exposure <input id="camera_exposure" type="number" step="5" min="10" max="80"
+                placeholder="Unknown exposure" />
+            ms</label>
+
+        <!-- TODO: invert image checkbox -->
+    </div>
+    <div id="images" class="hidden">
+        <div class="img_side" id="left">
+            <span class="img_info"></span>
+            <div>
+                <div>
+                    <svg class="center_mark">
+                        <line x1="50%" x2="50%" y1="0%" y2="100%" stroke="black" stroke-width="3" />
+                        <line x1="0%" x2="100%" y1="50%" y2="50%" stroke="black" stroke-width="3" />
+                        <line x1="50%" x2="50%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="50%" y2="50%" stroke="white" stroke-width="1" />
+
+                        <!-- <line x1="25%" x2="25%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="75%" x2="75%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="25%" y2="25%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="75%" y2="75%" stroke="white" stroke-width="1" /> -->
+                    </svg>
+                    <img id="img_left" />
+                </div>
+            </div>
+        </div>
+        <div class="img_side" id="right">
+            <span class="img_info"></span>
+            <div>
+                <div>
+                    <svg class="center_mark">
+                        <line x1="50%" x2="50%" y1="0%" y2="100%" stroke="black" stroke-width="3" />
+                        <line x1="0%" x2="100%" y1="50%" y2="50%" stroke="black" stroke-width="3" />
+                        <line x1="50%" x2="50%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="50%" y2="50%" stroke="white" stroke-width="1" />
+
+                        <!-- <line x1="25%" x2="25%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="75%" x2="75%" y1="0%" y2="100%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="25%" y2="25%" stroke="white" stroke-width="1" />
+                        <line x1="0%" x2="100%" y1="75%" y2="75%" stroke="white" stroke-width="1" /> -->
+                    </svg>
+                    <img id="img_right" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        img_left.src = create_image_url('/stereo/left/focus_analyzer/output/image_mono')
+        img_right.src = create_image_url('/stereo/right/focus_analyzer/output/image_mono')
+
+
+        document.getElementById("image_selector").addEventListener("change", image_selector_change);
+        document.getElementById("full_size_checkbox").addEventListener("change", full_size_change);
+
+
+        ros.on('connection', async function () {
+            console.log('Connected to websocket server.');
+
+            if (enable_socket_debug) { register_socket_debug(); }
+
+            camera_interface_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/camera_interface_srv", serviceType: "earth_rover_weeder_msgs/StereoCameraInterface" });
+
+            const req = new ROSLIB.ServiceRequest({ command: 0, value: 0.0 });
+
+            set_info("Waiting for camera interface: " + camera_interface_srv.name);
+
+            console.log("Waiting for camera interface: " + camera_interface_srv.name);
+            await wait_for_service(camera_interface_srv);
+            console.log("Camera interface found");
+
+            set_info("Configuring camera");
+
+            camera_interface_srv.callService(req, (res) => {
+                set_info("");
+            }, (err) => { set_info("Error configuring the camera: " + err); });
+
+
+            const current_exposure = await get_freerun_exposure();
+
+            if (isNaN(current_exposure)) {
+                set_info("Unable to retrieve current camera exposure");
+                document.getElementById("camera_exposure").value = "";
+            } else {
+                document.getElementById("camera_exposure").value = current_exposure;
+            }
+
+            document.getElementById("camera_exposure").addEventListener("change", set_exposure);
+
+
+
+
+            document.getElementById("controls").classList.remove(["hidden"]);
+
+            document.getElementById("images").classList.remove(["hidden"]);
+
+        });
+
+        ros.connect('/rosbridge');
+
+        // Subscriber to keep the websocket connection alive
+        keepalive_topic = new ROSLIB.Topic({ ros: ros, name: "/stereo/left/focus_analyzer/output/camera_info", messageType: "sensor_msgs/CameraInfo" });
+        keepalive_topic.subscribe((msg) => { /* DO NOTHING */ });
+    </script>
+</body>
+
+</html>
