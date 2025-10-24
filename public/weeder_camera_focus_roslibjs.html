@@ -105,8 +105,10 @@
         }
 
 
-        function create_image_url(topic) {
-            return '/image/stream?type=png&default_transport=raw&quality=100&topic=' + topic;
+        function create_image_url(topic, width = null, height = null, quality=90, endpoint='stream') {
+            const size_params = (width != null && height != null) ? "&width=" + width + "&height=" + height : "";
+
+            return '/image/'+ endpoint +'?quality='+quality+'&topic=' + topic + size_params;
         }
 
         var left_focus_topic = new ROSLIB.Topic({ ros: ros, name: "/stereo/left/focus_analyzer/output/focus", messageType: "std_msgs/Float64" });
@@ -119,10 +121,30 @@
         const update_focus_left = update_focus_gen("#left .img_info");
         const update_focus_right = update_focus_gen("#right .img_info");
 
+        function update_image_src(img_id, img_prefix, visibility_element_selector) {
+            let img_elem = document.getElementById(img_id);
+            let selector = document.getElementById("image_selector");
+            let full_size_checkbox = document.getElementById("full_size_checkbox");
+            let visibility_element = document.querySelector(visibility_element_selector);
+
+            return (force_full_screen = false) => {
+                if (window.getComputedStyle(visibility_element, null).display == 'none' && !force_full_screen) { img_elem.src = ""; return;}
+
+                const width = full_size_checkbox.checked || force_full_screen ? null : img_elem.width > 0 ? img_elem.width : null;
+                const height = full_size_checkbox.checked || force_full_screen ? null : img_elem.height > 0 ? img_elem.height : null;
+                const new_src = create_image_url(img_prefix + selector.value, width, height);
+
+                if (URL.parse(new_src, window.location).href != img_elem.src){
+                    // console.log(URL.parse(new_src, window.location).href, "!=", img_elem.src)
+                    img_elem.src = new_src;
+                }
+            };
+        }
+
+
 
         function image_selector_change(event) {
-            document.getElementById("img_left").src = create_image_url('/stereo/left/' + event.target.value);
-            document.getElementById("img_right").src = create_image_url('/stereo/right/' + event.target.value);
+            update_imgs_src();
 
             if (left_focus_topic.listenerCount() > 0) { left_focus_topic.unsubscribe(update_focus_left); }
             if (right_focus_topic.listenerCount() > 0) { right_focus_topic.unsubscribe(update_focus_right); }
@@ -142,6 +164,7 @@
                 images.classList.remove(['full_size'])
             }
 
+            update_imgs_src();
         }
 
         document.addEventListener("visibilitychange", () => {
@@ -156,12 +179,12 @@
             image_selector.dispatchEvent(event);
             event = new Event("change", { target: full_size_checkbox });
             full_size_checkbox.dispatchEvent(event);
-        });
+        }, {passive: true});
 
         document.addEventListener("DOMContentLoaded", () => {
             let event = new Event("visibilitychange");
             document.dispatchEvent(event);
-        })
+        }, { passive: true })
     </script>
 
     <style>
@@ -311,12 +334,32 @@
     </div>
 
     <script>
-        img_left.src = create_image_url('/stereo/left/focus_analyzer/output/image_mono')
-        img_right.src = create_image_url('/stereo/right/focus_analyzer/output/image_mono')
+        function force_img_resize() {
+            img_left.src = create_image_url('/stereo/left/focus_analyzer/output/image_mono', null, null, 1, 'snapshot')
+            img_right.src = create_image_url('/stereo/right/focus_analyzer/output/image_mono', null, null, 1, 'snapshot')
+        }
+        force_img_resize();
+
+        const update_left_src = update_image_src("img_left", '/stereo/left/', '#left');
+        const update_right_src = update_image_src("img_right", '/stereo/right/', '#right');
+
+        const update_imgs_src = (force_full_screen = false) => {
+            update_left_src(force_full_screen);
+            update_right_src(force_full_screen);
+        };
+
+        setInterval(()=> {
+            update_imgs_src();
+        }, 500);
 
 
-        document.getElementById("image_selector").addEventListener("change", image_selector_change);
-        document.getElementById("full_size_checkbox").addEventListener("change", full_size_change);
+        visualViewport.addEventListener('resize', (e) => { force_img_resize(); }, { passive: true });
+        // resize_observer = new ResizeObserver((entries, observer) => { update_imgs_src(true); });
+        // resize_observer.observe(document.getElementById('images'));
+
+
+        document.getElementById("image_selector").addEventListener("change", image_selector_change, { passive: true });
+        document.getElementById("full_size_checkbox").addEventListener("change", full_size_change, { passive: true });
 
 
         ros.on('connection', async function () {
@@ -350,9 +393,7 @@
                 document.getElementById("camera_exposure").value = current_exposure;
             }
 
-            document.getElementById("camera_exposure").addEventListener("change", set_exposure);
-
-
+            document.getElementById("camera_exposure").addEventListener("change", set_exposure, { passive: true });
 
 
             document.getElementById("controls").classList.remove(["hidden"]);
