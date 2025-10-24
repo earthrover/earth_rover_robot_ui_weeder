@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="/common/eventemitter2_6.4.9.min.js"></script>
+    <script src="/common/roslib.min.js"></script>
+
+    <script>
+        var module_ns = "/weeder/module1";
+
+        const opt_ns = URL.parse(window.location).searchParams.get('module_ns');
+        if (opt_ns) {
+            module_ns = opt_ns
+        }
+
+        var ros = new ROSLIB.Ros({});
+
+        ros.on('error', function (error) {
+            console.log('Error connecting to websocket server: ', error);
+        });
+
+        ros.on('close', function () {
+            console.log('Connection to websocket server closed.');
+        });
+
+        let camera_interface_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/camera_interface_srv", serviceType: "earth_rover_weeder_msgs/StereoCameraInterface" });
+
+        var weederClient = new ROSLIB.ActionClient({
+            ros: ros,
+            serverName: module_ns + '/weeder',
+            actionName: 'earth_rover_weeder_msgs/WeederAction'
+        });
+
+        function actionClient(enable_fire = false) {
+
+            var goal = new ROSLIB.Goal({
+                actionClient: weederClient,
+                goalMessage: {
+                    crop_protection_enabled: false,
+                    target_weeds: enable_fire
+                }
+            });
+
+
+            goal.on('feedback', function (feedback) {
+                console.log('Feedback: ' + feedback);
+            });
+
+            goal.on('result', function (result) {
+                console.log('Final Result: ',  result);
+                document.getElementById('img').src = create_image_url(module_ns + '/debug/left/unit_assignments&t='+Date.now(), 'snapshot');
+            });
+
+            goal.send();
+            document.getElementById('img').src = '';
+        }
+
+        async function wait_for_service(service) {
+            const new_call = () => {
+                setTimeout(async () => {
+                    await wait_for_service(service);
+                    resolve();
+                }, 500);
+            };
+
+            await new Promise((resolve) => {
+                service.ros.getServiceType(service.name,
+                    (type) => {
+                        if (type === "") { new_call(); }
+                        else { resolve(); }
+                    }, (err) => {
+                        new_call();
+                    });
+            });
+        }
+
+
+        async function get_triggered_exposure() {
+            const req = new ROSLIB.ServiceRequest({ command: 35, value: 0.0 });
+
+            await wait_for_service(camera_interface_srv);
+
+            return await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    if (res.success) {
+                        resolve(Number(res.response));
+                    } else {
+                        resolve(NaN);
+                    }
+                }, (err) => { resolve(NaN); });
+            });
+        }
+
+        async function set_exposure(event) {
+            event.target.disabled = true;
+
+            const req = new ROSLIB.ServiceRequest({ command: 25, value: Number(event.target.value) });
+
+            await wait_for_service(camera_interface_srv);
+
+            const result = await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => {
+                    resolve(res.success);
+                }, (err) => { resolve(false); });
+            });
+
+            if (!result) { set_info("Unable to apply last exposure update"); }
+
+            event.target.disabled = false;
+        }
+
+
+        function create_image_url(topic, endpoint = 'stream', quality = 50) {
+
+            return '/image/' + endpoint + '?quality=' + quality + '&topic=' + topic;
+        }
+
+    </script>
+
+    <style>
+        body {
+            margin: 0;
+        }
+
+        img {
+            max-width: 100vw;
+            max-height: calc(100vh - 25px);;
+            /* display: inline-block;
+            float: left; */
+        }
+
+        .controls {
+            /* display: inline-block;
+            float: left; */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <!-- <input type="number" /> -->
+        <button onclick="actionClient()">Target</button>
+        <button onclick="actionClient(true)">Fire</button>
+        <span>|</span>
+        <label>Camera exposure <input id="camera_exposure" type="number" step="5" min="10" max="80"
+                placeholder="Unknown exposure" />
+            ms</label>
+    </div>
+
+    <img id="img" />
+
+
+    <script>
+        document.getElementById('img').src = create_image_url(module_ns + '/debug/left/unit_assignments');
+
+
+        ros.on('connection', async function () {
+            console.log('Connected to websocket server.');
+
+            const current_exposure = await get_triggered_exposure();
+
+            if (isNaN(current_exposure)) {
+                console.log("Unable to retrieve current camera exposure");
+                document.getElementById("camera_exposure").value = "";
+            } else {
+                document.getElementById("camera_exposure").value = current_exposure;
+            }
+
+            document.getElementById("camera_exposure").addEventListener("change", set_exposure, { passive: true });
+        });
+
+        ros.connect('/rosbridge');
+    </script>
+</body>
+
+</html>
