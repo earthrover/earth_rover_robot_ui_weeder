@@ -3,10 +3,12 @@
     <arg name="hardware_cameras" default="true" />
 
     <arg name="standalone" default="false" />
-    <arg name="create_nodelet_managers" default="true"/>
 
     <node pkg="web_video_server" type="web_video_server" name="web_video_server">
         <param name="address"               value="127.0.0.1"/>
+        <param name="server_threads"               value="2"/>
+        <param name="ros_threads"               value="4"/>
+        <param name="publish_rate"               value="0.05"/>
     </node>
 
     <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
@@ -19,13 +21,15 @@
 
     </include>
 
-    <!-- <node pkg="nodelet" type="nodelet" name="nodelet_manager"></node> -->
+    <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" unless="$(arg standalone)" />
+
     <include file="$(find earth_rover_weeder_vision)/launch/stereo_system.launch">
         <arg name="launch_cameras"                  value="$(arg hardware_cameras)"/>
 
         <arg name="standalone"                value="$(arg standalone)"/>
 
-        <arg name="create_nodelet_managers"   value="$(arg create_nodelet_managers)"/>
+        <arg name="manager_left"   value="/nodelet_manager"/>
+        <arg name="manager_right"   value="/nodelet_manager"/>
     </include>
 
     <!-- ROS_NAMESPACE=/stereo roslaunch earth_rover_weeder_vision focus_camera.launch stereo:=true input:=image_color -->
