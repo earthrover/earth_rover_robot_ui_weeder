@@ -14,6 +14,8 @@
             module_ns = opt_ns
         }
 
+        console.log("Using '" + module_ns + "' as module namespace");
+
         var ros = new ROSLIB.Ros({});
 
         ros.on('error', function (error) {
@@ -31,6 +33,12 @@
             serverName: module_ns + '/weeder',
             actionName: 'earth_rover_weeder_msgs/WeederAction'
         });
+
+        function buttons_set_disabled(disabled) {
+            document.querySelectorAll('.action-btn').forEach((elem) => {
+                elem.disabled = disabled;
+            });
+        }
 
         function actionClient(enable_fire = false) {
 
@@ -50,8 +58,10 @@
             goal.on('result', function (result) {
                 console.log('Final Result: ',  result);
                 document.getElementById('img').src = create_image_url(module_ns + '/debug/left/unit_assignments&t='+Date.now(), 'snapshot');
+                setTimeout(() => { buttons_set_disabled(false); }, 2000);
             });
 
+            buttons_set_disabled(true);
             goal.send();
             document.getElementById('img').src = '';
         }
@@ -138,10 +148,12 @@
 </head>
 
 <body>
+    <!-- TODO: show error if module not found -->
+
     <div class="controls">
         <!-- <input type="number" /> -->
-        <button onclick="actionClient()">Target</button>
-        <button onclick="actionClient(true)">Fire</button>
+        <button class="action-btn" onclick="actionClient()">Target</button>
+        <button class="action-btn" onclick="actionClient(true)">Fire</button>
         <span>|</span>
         <label>Camera exposure <input id="camera_exposure" type="number" step="5" min="10" max="80"
                 placeholder="Unknown exposure" />
