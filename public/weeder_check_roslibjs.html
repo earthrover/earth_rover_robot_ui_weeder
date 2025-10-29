@@ -377,6 +377,11 @@
             });
 
             document.getElementById('manual-trigger').addEventListener('click', async (evt) => {
+                document.getElementById('manual-trigger').disabled = true;
+                await trigger();
+                setTimeout(() => {
+                    document.getElementById('manual-trigger').disabled = false;
+                }, 2000);
             });
 
 
