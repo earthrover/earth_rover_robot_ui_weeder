@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="/common/eventemitter2_6.4.9.min.js"></script>
+    <script src="/common/roslib.min.js"></script>
+
+    <!--TODO: implement status check -->
+
+    <script>
+
+        var module_ns = "/weeder/module1";
+
+        const opt_ns = URL.parse(window.location).searchParams.get('module_ns');
+        if (opt_ns) {
+            module_ns = opt_ns
+        }
+
+        console.log("Using '" + module_ns + "' as module namespace");
+
+        var ros = new ROSLIB.Ros({});
+
+        ros.on('error', function (error) {
+            console.log('Error connecting to websocket server: ', error);
+        });
+
+        ros.on('close', function () {
+            console.log('Connection to websocket server closed.');
+        });
+
+        async function wait_for_service(service) {
+            const new_call = () => {
+                setTimeout(async () => {
+                    await wait_for_service(service);
+                    resolve();
+                }, 500);
+            };
+
+            await new Promise((resolve) => {
+                service.ros.getServiceType(service.name,
+                    (type) => {
+                        if (type === "") { new_call(); }
+                        else { resolve(); }
+                    }, (err) => {
+                        new_call();
+                    });
+            });
+        }
+
+        async function home_unit(unit, wait = true) {
+            let home_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/" + unit + "/home_motor", serviceType: "earth_rover_weeder_msgs/MotorsHome" });
+
+            if (wait) { await wait_for_service(home_srv); }
+
+            const req = new ROSLIB.ServiceRequest({ home: true });
+
+            const result = await new Promise((resolve) => {
+                home_srv.callService(req, (res) => {
+                    resolve(res.response);
+                }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+        async function reset_unit(unit, wait = true) {
+            let reset_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/" + unit + "/disable_motor", serviceType: "std_srvs/Empty" });
+
+            if (wait) { await wait_for_service(reset_srv); }
+
+            const req = new ROSLIB.ServiceRequest({});
+
+            const result = await new Promise((resolve) => {
+                reset_srv.callService(req, (res) => {
+                    resolve(true);
+                }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+        async function move_unit(unit, wait = true, v1 = 90, v2 = 100, v3 = 110) {
+            let move_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/" + unit + "/move_motor", serviceType: "earth_rover_weeder_msgs/MotorsMove" });
+
+            if (wait) { await wait_for_service(move_srv); }
+
+            const req = new ROSLIB.ServiceRequest({ v1: v1, v2: v2, v3: v3 });
+
+            const result = await new Promise((resolve) => {
+                move_srv.callService(req, (res) => {
+                    resolve(res.response);
+                }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+
+        async function point_diodes(unit, wait = true) {
+            let point_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/" + unit + "/set_laser", serviceType: "earth_rover_weeder_msgs/Laser" });
+
+            if (wait) { await wait_for_service(point_srv); }
+
+            const req = new ROSLIB.ServiceRequest({ action: 'p', burn_ms: 0 });
+
+            const result = await new Promise((resolve) => {
+                point_srv.callService(req, (res) => {
+                    resolve(res.response);
+                }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+        async function off_diodes(unit, wait = true) {
+            let off_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/" + unit + "/set_laser", serviceType: "earth_rover_weeder_msgs/Laser" });
+
+            if (wait) { await wait_for_service(off_srv); }
+
+            const req = new ROSLIB.ServiceRequest({ action: 'o', burn_ms: 0 });
+
+            const result = await new Promise((resolve) => {
+                off_srv.callService(req, (res) => {
+                    resolve(res.response);
+                }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+        async function trigger(wait = true) {
+
+            let camera_interface_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/camera_interface_srv", serviceType: "earth_rover_weeder_msgs/StereoCameraInterface" });
+
+            if (wait) { await wait_for_service(camera_interface_srv); }
+
+            const req = new ROSLIB.ServiceRequest({ command: 10, value: 0.0 });
+
+            const result = await new Promise((resolve) => {
+                camera_interface_srv.callService(req, (res) => { resolve(true); }, (err) => { resolve(false); });
+            });
+
+            return result;
+        }
+
+
+        window.addEventListener("beforeunload", (event) => {
+            // Failsafe
+
+            off_diodes('unit11', false);
+            off_diodes('unit12', false);
+            off_diodes('unit21', false);
+            off_diodes('unit22', false);
+
+            reset_unit('unit11', false);
+            reset_unit('unit12', false);
+            reset_unit('unit21', false);
+            reset_unit('unit22', false);
+        });
+
+        function manual_controls_set_disabled(disabled) {
+            // document.getElementById('unit-selector-set').disabled = disabled;
+            document.querySelectorAll('.manual-control-set').forEach((elem) => { elem.disabled = disabled });
+            // document.getElementById('motor-control-set').disabled = disabled;
+            // document.getElementById('laser-control-set').disabled = disabled;
+            // document.getElementById('flash-control-set').disabled = disabled;
+        }
+
+
+        async function semi_auto_test(unit, point_on_ms = 500) {
+            let start_btn = document.getElementById("semiauto-start");
+            let next_btn = document.getElementById("semiauto-next");
+            // let info = document.getElementById("semiauto-info");
+
+            start_btn.disabled = true;
+            manual_controls_set_disabled(true);
+
+            async function step(fn) {
+                let next_cb_promise = new Promise((resolve) => { next_btn.onclick = () => { resolve(); }; });
+                next_btn.disabled = true;
+
+                const result = Promise.resolve(typeof (fn) == 'function' ? fn() : fn);
+                // await new Promise((resolve) => { setTimeout(() => { resolve(); }, point_on_ms); });
+
+                next_btn.disabled = false;
+                next_btn.focus();
+
+                await next_cb_promise;
+                next_btn.onclick = null;
+
+                return result;
+            }
+
+            next_btn.textContent = "Home";
+
+
+
+            await step(() => { });
+
+            // await step(home_unit(unit));
+            await step(async () => {
+                await home_unit(unit);
+                next_btn.textContent = "Move";
+            });
+            await step(async () => {
+                await move_unit(unit);
+                next_btn.textContent = "Reset";
+            });
+            await step(async () => {
+                await reset_unit(unit);
+                next_btn.textContent = "Home";
+            });
+            await step(async () => {
+                await home_unit(unit);
+                await reset_unit(unit);
+                next_btn.textContent = "Point diodes";
+            });
+
+
+
+            next_btn.disabled = true;
+
+            await point_diodes(unit);
+
+            await new Promise((resolve) => { setTimeout(() => { resolve(); }, point_on_ms); });
+
+            await off_diodes(unit, false);
+            next_btn.textContent = "Next";
+
+
+            manual_controls_set_disabled(false);
+            start_btn.disabled = false;
+            next_btn.disabled = true;
+        }
+
+        function get_selected_unit() {
+            return document.querySelector('#unit-selector-set input[type="radio"]:checked').value;
+        }
+
+        function semi_auto_test_cb() {
+            const selected_unit = get_selected_unit();
+
+            semi_auto_test(selected_unit);
+        }
+
+    </script>
+
+    <style>
+        body {
+            margin: 0;
+        }
+
+        fieldset {
+            display: inline-block;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- TODO: show error if module not found -->
+    <span id="info"></span>
+    <div id="content" class="hidden">
+
+        <fieldset id="unit-selector-set">
+            <legend>Unit selection</legend>
+            <div>
+
+                <label>
+                    <input class="manual-control-set" type="radio" name="unit" value="unit11" checked />
+                    Unit 11
+                </label>
+                <label>
+                    <input class="manual-control-set" type="radio" name="unit" value="unit12" />
+                    Unit 12
+                </label>
+                <label>
+                    <input class="manual-control-set" type="radio" name="unit" value="unit21" />
+                    Unit 21
+                </label>
+                <label>
+                    <input class="manual-control-set" type="radio" name="unit" value="unit22" />
+                    Unit 22
+                </label>
+            </div>
+
+            <br />
+
+            <div>
+                <fieldset class="manual-control-set" id="motor-control-set">
+                    <legend>Motor controls</legend>
+
+                    <button id="manual-home">Home</button>
+                    <button id="manual-move">Move</button>
+                    <button id="manual-reset">Reset</button>
+                </fieldset>
+
+                <fieldset class="manual-control-set" id="laser-control-set">
+                    <legend>Diode controls</legend>
+
+                    <button id="manual-point">Point</button>
+                    <button id="manual-off">Off</button>
+                </fieldset>
+            </div>
+
+            <div>
+                <fieldset id="semiauto-control-set">
+                    <legend>Semi-auto check</legend>
+
+                    <button id="semiauto-start" onclick="semi_auto_test_cb()">Start</button>
+                    <button id="semiauto-next" disabled>Next</button>
+                </fieldset>
+            </div>
+        </fieldset>
+
+        <fieldset class="manual-control-set" id="flash-control-set">
+            <legend>Flash control</legend>
+
+            <button id="manual-trigger">Trigger</button>
+        </fieldset>
+
+    </div>
+
+    <script>
+        document.getElementById('info').textContent = "Trying to connect to the module " + module_ns;
+
+
+        ros.on('connection', async function () {
+            console.log('Connected to websocket server.');
+            document.getElementById('info').textContent = "";
+
+
+            document.getElementById('manual-home').addEventListener('click', async (evt) => {
+                document.getElementById("semiauto-control-set").disabled = true;
+                manual_controls_set_disabled(true);
+                await home_unit(get_selected_unit());
+                manual_controls_set_disabled(false);
+                document.getElementById("semiauto-control-set").disabled = false;
+            });
+
+            document.getElementById('manual-move').addEventListener('click', async (evt) => {
+                document.getElementById("semiauto-control-set").disabled = true;
+                manual_controls_set_disabled(true);
+                await move_unit(get_selected_unit());
+                manual_controls_set_disabled(false);
+                document.getElementById("semiauto-control-set").disabled = false;
+            });
+
+            document.getElementById('manual-reset').addEventListener('click', async (evt) => {
+                document.getElementById("semiauto-control-set").disabled = true;
+                manual_controls_set_disabled(true);
+                await reset_unit(get_selected_unit());
+                manual_controls_set_disabled(false);
+                document.getElementById("semiauto-control-set").disabled = false;
+            });
+
+            document.getElementById('manual-point').addEventListener('click', async (evt) => {
+                document.getElementById("semiauto-control-set").disabled = true;
+                manual_controls_set_disabled(true);
+                document.getElementById("laser-control-set").disabled = false;
+                await point_diodes(get_selected_unit());
+                manual_controls_set_disabled(false);
+                document.getElementById("semiauto-control-set").disabled = false;
+            });
+            
+            document.getElementById('manual-off').addEventListener('click', async (evt) => {
+                document.getElementById("semiauto-control-set").disabled = true;
+                manual_controls_set_disabled(true);
+                document.getElementById("laser-control-set").disabled = false;
+                await off_diodes(get_selected_unit());
+                manual_controls_set_disabled(false);
+                document.getElementById("semiauto-control-set").disabled = false;
+            });
+
+            document.getElementById('manual-trigger').addEventListener('click', async (evt) => {
+            });
+
+
+            document.getElementById('content').classList.remove('hidden');
+        });
+
+        ros.connect('/rosbridge');
+    </script>
+</body>
+
+</html>
