@@ -160,18 +160,13 @@
         });
 
         function manual_controls_set_disabled(disabled) {
-            // document.getElementById('unit-selector-set').disabled = disabled;
             document.querySelectorAll('.manual-control-set').forEach((elem) => { elem.disabled = disabled });
-            // document.getElementById('motor-control-set').disabled = disabled;
-            // document.getElementById('laser-control-set').disabled = disabled;
-            // document.getElementById('flash-control-set').disabled = disabled;
         }
 
 
         async function semi_auto_test(unit, point_on_ms = 500) {
             let start_btn = document.getElementById("semiauto-start");
             let next_btn = document.getElementById("semiauto-next");
-            // let info = document.getElementById("semiauto-info");
 
             start_btn.disabled = true;
             manual_controls_set_disabled(true);
@@ -217,7 +212,7 @@
                 next_btn.textContent = "Point diodes";
             });
 
-
+            // TODO: Ensure safe environment
 
             next_btn.disabled = true;
 

@@ -69,16 +69,16 @@
             console.log('Connection to websocket server closed.');
         });
 
-
-        // var host = window.location.hostname;
-        // if (window.location.protocol.startsWith("file")) { host = "localhost"; }
-        // ros.connect('ws://' + host + ':9090');
-
+        function buttons_set_disabled(disabled) {
+            document.querySelectorAll('button').forEach((elem) => { elem.disabled = disabled });
+        }
 
         async function reset_action() {
             let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/clear", serviceType: "std_srvs/Empty" });
 
             const req = new ROSLIB.ServiceRequest({});
+
+            buttons_set_disabled(true);
 
             await wait_for_service(srv);
 
@@ -86,13 +86,19 @@
 
             srv.callService(req, (res) => {
                 set_info("");
-            }, (err) => { set_info("Error resetting the snapshots: " + err); });
+                buttons_set_disabled(false);
+            }, (err) => {
+                set_info("Error resetting the snapshots: " + err);
+                buttons_set_disabled(false);
+             });
         }
 
         async function calibrate_action() {
             let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/calibrate", serviceType: "std_srvs/Trigger" });
 
             const req = new ROSLIB.ServiceRequest({});
+
+            buttons_set_disabled(true);
 
             await wait_for_service(srv);
 
@@ -104,14 +110,19 @@
                 } else {
                     set_info("Calibration finished with an error: " + res.message);
                 }
-            }, (err) => { set_info("Error calibrating: " + err); });
+                buttons_set_disabled(false);
+            }, (err) => {
+                set_info("Error calibrating: " + err);
+                buttons_set_disabled(false);
+            });
         }
 
         async function save_action() {
-            let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/calibrate", serviceType: "std_srvs/Trigger" });
+            let srv = new ROSLIB.Service({ ros: ros, name: "/camera_calibrator/save", serviceType: "std_srvs/Trigger" });
 
             const req = new ROSLIB.ServiceRequest({});
 
+            buttons_set_disabled(true);
             await wait_for_service(srv);
 
             set_info("Saving calibration");
@@ -122,7 +133,11 @@
                 } else {
                     set_info("An error occurred while saving: " + res.message);
                 }
-            }, (err) => { set_info("Error saving: " + err); });
+                buttons_set_disabled(false);
+            }, (err) => {
+                set_info("Error saving: " + err);
+                buttons_set_disabled(false);
+            });
         }
 
 
