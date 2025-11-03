@@ -1,0 +1,13 @@
+#! /bin/bash
+
+export ROS_LOG_DIR="/home/earth/data/log"
+export ROSCONSOLE_FORMAT="[${severity}] [${time}] [${node}]: ${message}"
+export DARKNET_PATH="/home/earth/libs/earth_rover_darknet"
+export PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+export LD_LIBRARY_PATH="/usr/local/cuda/targets/aarch64-linux/lib:/usr/local/lib"
+export CPATH="/usr/local/cuda/targets/aarch64-linux/include:"
+
+source /home/earth/earth_rover_ws/devel/setup.bash
+
+
+roslaunch earth_rover_robot_ui_weeder web_camera_calibration.launch
