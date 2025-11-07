@@ -22,7 +22,7 @@ service_text="[Unit]
 Description=Service trampoline server
 After=network.target
 [Service]
-ExecStart=$EXEC_PATH --allowed-service-prefix-list weederstart camera_calibration
+ExecStart=$EXEC_PATH --allowed-service-prefix-list weederstart camera_calibration local_module
 Restart=on-abort
 [Install]
 WantedBy=multi-user.target"

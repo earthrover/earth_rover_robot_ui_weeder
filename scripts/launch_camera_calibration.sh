@@ -10,4 +10,4 @@ export CPATH="/usr/local/cuda/targets/aarch64-linux/include:"
 source /home/earth/earth_rover_ws/devel/setup.bash
 
 
-roslaunch earth_rover_robot_ui_weeder web_camera_calibration.launch
+stdbuf -oL -eL roslaunch --screen earth_rover_robot_ui_weeder web_camera_calibration.launch
