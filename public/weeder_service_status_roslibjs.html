@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="/common/host_control.js"></script>
+
+    <!--TODO: implement status check -->
+
+    <script>
+
+
+
+
+        window.addEventListener("beforeunload", (event) => {
+            // Failsafe
+
+        });
+
+        function manual_controls_set_disabled(disabled) {
+            // document.querySelectorAll('.manual-control-set').forEach((elem) => { elem.disabled = disabled });
+        }
+
+
+
+    </script>
+
+    <style>
+        body {
+            margin: 0;
+        }
+
+        fieldset {
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- TODO: show error if module not found -->
+    <span id="ping-status"></span>
+
+    <div>
+        <fieldset id="services-control-set">
+            <legend>Launch</legend>
+
+            <!-- TODO: define service name for local launch of the module -->
+            <button class="launch-service" data-service="local_module" id="launch-module">Module check / test fire</button>
+            <button class="launch-service" data-service="camera_calibration" id="launch-camera-calib">Camera focus / calibration</button>
+            <!-- <button id="launch-robot-calib">Robot calibration</button> -->
+        </fieldset>
+    </div>
+
+    <div>
+        <fieldset id="host-control-set">
+            <legend>Module control</legend>
+
+            <button id="host-shutdown">Shutdown</button>
+            <button id="host-reboot">Reboot</button>
+        </fieldset>
+    </div>
+
+    <script>
+        document.getElementById("host-shutdown").addEventListener('click', async (evt) => {
+            await send_shutdown();
+        });
+
+        document.getElementById("host-reboot").addEventListener('click', async (evt) => {
+            await send_restart();
+        });
+
+        document.querySelectorAll(".launch-service").forEach((elem) => {
+            elem.addEventListener('click', (evt) => {
+                const service_name = evt.target.dataset['service'];
+
+                send_start_service(service_name + '.service');
+            });
+        })
+
+
+        setInterval(() => {
+            const ping_span = document.getElementById("ping-status");
+            send_ping(500)
+                .then((val) => {
+                    ping_span.textContent = "";
+                })
+                .catch((err) => {
+                    ping_span.textContent = "Unable to connect to the module: " + err.toString();
+                });
+        }, 1000)
+    </script>
+</body>
+
+</html>
