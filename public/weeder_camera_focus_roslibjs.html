@@ -99,7 +99,7 @@
                 }, (err) => { resolve(false); });
             });
 
-            if (!result) { set_info("Unable to apply last exposure update"); }
+            set_info(!result ? "Unable to apply last exposure update" : "");
 
             event.target.disabled = false;
         }
