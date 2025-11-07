@@ -29,5 +29,3 @@ if [ ! -e "$LOCAL_MODULE_DST" ] ; then
 fi
 
 sudo systemctl daemon-reload
-
-sudo systemctl enable "$LOCAL_MODULE_FILE_NAME"

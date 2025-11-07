@@ -29,5 +29,3 @@ if [ ! -e "$CALIBRATION_SERVICE_DST" ] ; then
 fi
 
 sudo systemctl daemon-reload
-
-sudo systemctl enable "$CALIBRATION_SERVICE_FILE_NAME"
