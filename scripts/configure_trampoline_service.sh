@@ -20,6 +20,7 @@ TRAMPOLINE_SERVICE_DST="$SYSTEMD_UNITS_FOLDER/$TRAMPOLINE_SERVICE_FILE_NAME"
 
 service_text="[Unit]
 Description=Service trampoline server
+After=network.target
 [Service]
 ExecStart=$EXEC_PATH --allowed-service-prefix-list weederstart camera_calibration
 Restart=on-abort
