@@ -144,6 +144,18 @@
             /* display: inline-block;
             float: left; */
         }
+
+        .danger {
+            color: #fff;
+            background-color: #dc3545;
+            border-color: #dc3545;
+            border-radius: .25rem;
+        }
+
+        .danger:disabled {
+            opacity: .65;
+        }
+
     </style>
 </head>
 
@@ -153,9 +165,9 @@
     <div class="controls">
         <!-- <input type="number" /> -->
         <button class="action-btn" onclick="actionClient()">Target</button>
-        <button class="action-btn" onclick="actionClient(true)">Fire</button>
+        <button class="action-btn danger" onclick="actionClient(true)">Fire</button>
         <span>|</span>
-        <label>Camera exposure <input id="camera_exposure" type="number" step="5" min="10" max="80"
+        <label>Camera exposure <input id="camera_exposure" type="number" step="0.01" min="0.01" max="5"
                 placeholder="Unknown exposure" />
             ms</label>
     </div>
