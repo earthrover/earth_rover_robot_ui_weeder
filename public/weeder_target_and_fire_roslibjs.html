@@ -20,6 +20,7 @@
 
         ros.on('error', function (error) {
             console.log('Error connecting to websocket server: ', error);
+            document.getElementById("info").textContent = "Unable to connect to the module: " + error;
         });
 
         ros.on('close', function () {
@@ -83,6 +84,21 @@
                         new_call();
                     });
             });
+        }
+
+        async function wait_for_topic_message(topic, type) {
+            await new Promise((resolve) => {
+                let t = new ROSLIB.Topic({ ros: ros, name: topic, messageType: type });
+
+                t.subscribe((data) => {
+                    t.unsubscribe();
+                    resolve();
+                });
+            });
+        }
+
+        async function wait_for_module(module_ns) {
+            await wait_for_topic_message(module_ns + '/weeder/status', 'actionlib_msgs/GoalStatusArray');
         }
 
 
@@ -156,24 +172,30 @@
             opacity: .65;
         }
 
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 
 <body>
-    <!-- TODO: show error if module not found -->
+    <span id="info">Connecting with the module</span>
 
-    <div class="controls">
-        <!-- <input type="number" /> -->
-        <button class="action-btn" onclick="actionClient()">Target</button>
-        <button class="action-btn danger" onclick="actionClient(true)">Fire</button>
-        <span>|</span>
-        <label>Camera exposure <input id="camera_exposure" type="number" step="0.01" min="0.01" max="5"
-                placeholder="Unknown exposure" />
-            ms</label>
-    </div>
+    <main class="hidden">
+        <div class="controls">
+            <!-- <input type="number" /> -->
+            <button class="action-btn" onclick="actionClient()">Target</button>
+            <button class="action-btn danger" onclick="actionClient(true)">Fire</button>
+            <span>|</span>
+            <label>
+                Camera exposure
+                <input id="camera_exposure" type="number" step="0.01" min="0.01" max="5" placeholder="Unknown exposure" />
+                ms
+            </label>
+        </div>
 
-    <img id="img" />
-
+        <img id="img" />
+    </main>
 
     <script>
         document.getElementById('img').src = create_image_url(module_ns + '/debug/left/unit_assignments');
@@ -181,6 +203,12 @@
 
         ros.on('connection', async function () {
             console.log('Connected to websocket server.');
+
+            await wait_for_module(module_ns);
+
+            document.getElementById("info").textContent = "";
+
+            document.querySelector("main").classList.remove(["hidden"]);
 
             const current_exposure = await get_triggered_exposure();
 
