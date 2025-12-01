@@ -280,6 +280,13 @@
             }, (err) => { set_info("Error configuring the camera: " + err); });
 
 
+            const auto_exposure_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/exposure_auto_updater/update", serviceType: "std_srvs/SetBool" });
+
+            const off_auto_expo_req = new ROSLIB.ServiceRequest({ data: false });
+
+            auto_exposure_srv.callService(off_auto_expo_req, (res) => { }, (err) => { });
+
+
             const current_exposure = await get_freerun_exposure();
 
             console.log(current_exposure);
