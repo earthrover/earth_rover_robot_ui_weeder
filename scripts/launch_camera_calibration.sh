@@ -7,7 +7,8 @@ export PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/b
 export LD_LIBRARY_PATH="/usr/local/cuda/targets/aarch64-linux/lib:/usr/local/lib"
 export CPATH="/usr/local/cuda/targets/aarch64-linux/include:"
 
-source /home/earth/earth_rover_ws/devel/setup.bash
+export ROS_IP="$(hostname -I | head -1 | cut -f1 -d' ')";
 
+source /home/earth/earth_rover_ws/devel/setup.bash
 
 stdbuf -oL -eL roslaunch --screen earth_rover_robot_ui_weeder web_camera_calibration.launch
