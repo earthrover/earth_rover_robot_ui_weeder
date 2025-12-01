@@ -10,6 +10,12 @@
         // var module_ns = "/weeder/module9";
         var module_ns = "";
 
+        const mono_max_reprojection = 1.0;
+        const mono_acceptable_reprojection = 0.5;
+
+        const stereo_max_reprojection = 10.0;
+        const stereo_acceptable_reprojection = 5.0;
+
 
         async function wait_for_service(service) {
             const new_call = () => {
@@ -215,13 +221,42 @@
                 placeholder="Unknown exposure" />
             ms</label>
 
-            <!-- TODO: invert image checkbox -->
+        <span>|</span>
+        <label><input type="checkbox" id="invert" /> Invert</label>
+        <span>|</span>
+        <span>Num snapshots <span id="num_snapshots">0</span></span>
+        <span>|</span>
+
+        <!-- TODO: properly place those spans -->
+        <span>Left reprojection error: <span id="left_reprojection_span"></span></span>
+        <span>|</span>
+        <span>Right reprojection error: <span id="right_reprojection_span"></span></span>
+        <span>|</span>
+        <span>Stereo reprojection error: <span id="stereo_reprojection_span"></span></span>
+
+
+        <!--
+                    gdbus call --system --dest org.freedesktop.systemd1 --object-path /org/freedesktop/systemd1 -m org.freedesktop.systemd1.Manager.StopUnit weederstart@6.service replace
+                    gdbus call --system --dest org.freedesktop.systemd1 --object-path /org/freedesktop/systemd1 -m org.freedesktop.systemd1.Manager.StartUnit weederstart@6.service replace
+                    -->
+
+        <!-- TODO: disable save button if no calibration has been performed ? -->
     </div>
 
     <script>
 
+        document.getElementById('invert').addEventListener('change', (evt) => {
+                const left_img = document.getElementById('img_left');
+                const right_img = document.getElementById('img_right');
 
-        const host = window.location.protocol.startsWith("file") ? "localhost" : window.location.hostname;
+            if (evt.target.checked) {
+                left_img.src = left_img.src.replace("/left/", "/right/") + "&invert";
+                right_img.src = right_img.src.replace("/right/", "/left/") + "&invert";
+            } else {
+                left_img.src = left_img.src.replace("/right/", "/left/").replace("&invert", "");
+                right_img.src = right_img.src.replace("/left/", "/right/").replace("&invert", "");
+            }
+        });
 
         ros.on('connection', async function () {
             console.log('Connected to websocket server.');
@@ -258,6 +293,33 @@
 
             document.getElementById("camera_exposure").addEventListener("change", set_exposure);
 
+
+            const num_snapshots_span = document.getElementById('num_snapshots');
+            let num_snapshots_topic = new ROSLIB.Topic({ ros: ros, name: "/camera_calibrator/num_snapshots", messageType: "std_msgs/UInt64" });
+            num_snapshots_topic.subscribe((msg) => { num_snapshots_span.textContent = msg.data; });
+
+            function reproj_cb(val, max, acceptable, elem){
+                const is_invalid = val === null || isNaN(val);
+                elem.textContent = is_invalid ? '' : Number(val).toFixed(4);
+                const parent = elem.parentElement;
+                parent.style.display = is_invalid ? 'none' : '';
+                parent.style.color = val > max ? 'red' : (val > acceptable ? 'goldenrod' : 'green');
+                parent.style.fontWeight = val <= max && val > acceptable  ? 'bold' : '';
+            }
+
+
+            const left_reproj_span = document.getElementById('left_reprojection_span');
+            const right_reproj_span = document.getElementById('right_reprojection_span');
+            const stereo_reproj_span = document.getElementById('stereo_reprojection_span');
+
+            let stereo_reprojection_topic = new ROSLIB.Topic({ ros: ros, name: "/camera_calibrator/output/reprojection", messageType: "std_msgs/Float64" });
+            stereo_reprojection_topic.subscribe((msg) => { reproj_cb(msg.data, stereo_max_reprojection, stereo_acceptable_reprojection, stereo_reproj_span); });
+
+            let left_reprojection_topic = new ROSLIB.Topic({ ros: ros, name: "/camera_calibrator/output/left/reprojection", messageType: "std_msgs/Float64" });
+            left_reprojection_topic.subscribe((msg) => { reproj_cb(msg.data, mono_max_reprojection, mono_acceptable_reprojection, left_reproj_span); });
+
+            let right_reprojection_topic = new ROSLIB.Topic({ ros: ros, name: "/camera_calibrator/output/right/reprojection", messageType: "std_msgs/Float64" });
+            right_reprojection_topic.subscribe((msg) => { reproj_cb(msg.data, mono_max_reprojection, mono_acceptable_reprojection, right_reproj_span); });
 
 
             document.getElementById("controls").classList.remove(["hidden"]);
