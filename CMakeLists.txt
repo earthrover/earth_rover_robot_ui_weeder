@@ -151,6 +151,14 @@ catkin_package(
 # scripts/my_python_script
 # DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
+install(PROGRAMS
+  scripts/configure_calibration_service.sh
+  scripts/configure_local_module_service.sh
+  scripts/configure_trampoline_service.sh
+  scripts/launch_camera_calibration.sh
+  scripts/launch_local_module.sh
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
@@ -179,6 +187,9 @@ catkin_package(
 ## myfile2
 # DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
 
 #############
 ## Testing ##
