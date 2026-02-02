@@ -46,7 +46,8 @@
   <!--   <doc_depend>doxygen</doc_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
 
-  <exec_depend>rosbridge_server</exec_depend>
-  <exec_depend>web_video_server</exec_depend>
+  <exec_depend>earth_rover_robot_ui_infra</exec_depend>
+  <exec_depend>earth_rover_weeder_vision</exec_depend>
+  <exec_depend>nodelet</exec_depend>
 
 </package>

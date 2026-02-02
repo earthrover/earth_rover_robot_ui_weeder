@@ -29,7 +29,4 @@
         <arg name="stereo" value="true"/>
         <arg name="input" value="stereo"/>
     </include>
-
-    <!-- TODO: simple http server -->
-    <!-- python3 -m http.server -->
 </launch>
