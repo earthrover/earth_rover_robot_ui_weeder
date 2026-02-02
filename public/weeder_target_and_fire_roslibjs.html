@@ -19,7 +19,7 @@
         var ros = new ROSLIB.Ros({});
 
         ros.on('error', function (error) {
-            console.log('Error connecting to websocket server: ', error);
+            console.error('Error connecting to websocket server: ', error);
             document.getElementById("info").textContent = "Unable to connect to the module: " + error;
         });
 
@@ -128,10 +128,14 @@
             const result = await new Promise((resolve) => {
                 camera_interface_srv.callService(req, (res) => {
                     resolve(res.success);
-                }, (err) => { resolve(false); });
+                }, (err) => {
+                    console.error(err);
+                    resolve(false);
+                });
             });
 
-            if (!result) { set_info("Unable to apply last exposure update"); }
+            if (!result) { document.getElementById("info").textContent = "Unable to apply last exposure update"; }
+            else { document.getElementById("info").textContent = ""; }
 
             event.target.disabled = false;
         }
@@ -214,6 +218,7 @@
 
             if (isNaN(current_exposure)) {
                 console.log("Unable to retrieve current camera exposure");
+                document.getElementById("info").textContent = "Unable to retrieve current camera exposure";
                 document.getElementById("camera_exposure").value = "";
             } else {
                 document.getElementById("camera_exposure").value = current_exposure;
@@ -223,6 +228,9 @@
         });
 
         ros.connect('/rosbridge');
+
+        keepalive_topic = new ROSLIB.Topic({ ros: ros, name: module_ns + "/weeder/status", messageType: "actionlib_msgs/GoalStatusArray" });
+        keepalive_topic.subscribe((msg) => { /* DO NOTHING */ });
     </script>
 </body>
 
