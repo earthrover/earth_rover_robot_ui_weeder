@@ -13,5 +13,5 @@ source /home/earth/earth_rover_ws/devel/setup.bash
 
 echo '<launch>
     <include file="$(find earth_rover_robot_ui_infra)/launch/web_bridge.launch"/>
-    <include file="$(find earth_rover_weeder_robot)/launch/weeder_module.launch"/>
+    <include file="$(find earth_rover_weeder_robot)/launch/weeder_calibration.launch"/>
 </launch>' | stdbuf -oL -eL roslaunch --screen -

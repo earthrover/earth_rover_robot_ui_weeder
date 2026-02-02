@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <script src="/common/eventemitter2_6.4.9.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/roslib@1.3.0/build/roslib.js"></script> -->
+    <script src="/common/roslib.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.89.0/build/three.js"></script> -->
+    <script src="/common/three_0.89.0.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/ros3d@1/build/ros3d.js"></script> -->
+    <script src="/common/ros3d.min.js"></script>
+
+    <script src="/common/imperfect_point_cloud.js"></script>
+
+    <script>
+        var module_ns = "/weeder/module1";
+
+
+        var font_promise = new Promise((res, rej) => {
+            const loader = new THREE.FontLoader();
+            // const font = loader.load('https://cdn.jsdelivr.net/npm/three@0.89.0/examples/fonts/helvetiker_bold.typeface.json', res, null, rej);
+            const font = loader.load('/common/helvetiker_bold.typeface-three_0.89.0.json', res, null, rej);
+        });
+
+        var font = null;
+
+        async function get_font() {
+            if (font === null) {
+                font = await font_promise;
+            }
+
+            return font;
+        }
+
+
+        const opt_ns = URL.parse(window.location).searchParams.get('module_ns');
+        if (opt_ns) {
+            module_ns = opt_ns
+        }
+
+        console.log("Using '" + module_ns + "' as module namespace");
+
+        var ros = new ROSLIB.Ros({});
+
+        ros.on('error', function (error) {
+            console.log('Error connecting to websocket server: ', error);
+            document.getElementById("info").textContent = "Unable to connect to the module";
+        });
+
+        ros.on('close', function (e) {
+            console.log('Connection to websocket server closed.');
+            console.log(e)
+        });
+
+
+        let info_timeout = null;
+        function set_info(msg, timeout = undefined) {
+            if (info_timeout) { clearTimeout(info_timeout);}
+
+            let info_elem = document.getElementById('info');
+
+            info_elem.classList.add(["hidden"]);
+            info_elem.textContent = msg;
+            info_elem.classList.remove(["hidden"]);
+
+            if (timeout) {
+                setTimeout(() => {
+                    info_elem.classList.add(["hidden"]);
+                }, timeout);
+            }
+        }
+
+        let camera_interface_srv = new ROSLIB.Service({ ros: ros, name: module_ns + "/stereo/camera_interface_srv", serviceType: "earth_rover_weeder_msgs/StereoCameraInterface" });
+
+        var weederClient = new ROSLIB.ActionClient({
+            ros: ros,
+            serverName: module_ns + '/weeder',
+            actionName: 'earth_rover_weeder_msgs/WeederAction'
+        });
+
+        function buttons_set_disabled(disabled) {
+            document.querySelectorAll('.action-btn').forEach((elem) => {
+                elem.disabled = disabled;
+            });
+        }
+
+        function actionClient(enable_fire = false) {
+
+            var goal = new ROSLIB.Goal({
+                actionClient: weederClient,
+                goalMessage: {
+                    crop_protection_enabled: false,
+                    target_weeds: enable_fire
+                }
+            });
+
+
+            goal.on('feedback', function (feedback) {
+                console.log('Feedback: ' + feedback);
+            });
+
+            goal.on('result', function (result) {
+                console.log('Final Result: ', result);
+                // document.getElementById('img').src = create_image_url(module_ns + '/debug/left/unit_assignments&t=' + Date.now(), 'snapshot');
+                setTimeout(() => { buttons_set_disabled(false); }, 2000);
+            });
+
+            buttons_set_disabled(true);
+            goal.send();
+            // document.getElementById('img').src = '';
+        }
+
+        async function wait_for_service(service) {
+            const new_call = () => {
+                setTimeout(async () => {
+                    await wait_for_service(service);
+                    resolve();
+                }, 500);
+            };
+
+            await new Promise((resolve) => {
+                service.ros.getServiceType(service.name,
+                    (type) => {
+                        if (type === "") { new_call(); }
+                        else { resolve(); }
+                    }, (err) => {
+                        new_call();
+                    });
+            });
+        }
+
+        async function wait_for_topic_message(topic, type) {
+            await new Promise((resolve) => {
+                let t = new ROSLIB.Topic({ ros: ros, name: topic, messageType: type });
+
+                t.subscribe((data) => {
+                    t.unsubscribe();
+                    resolve();
+                });
+            });
+        }
+
+        async function wait_for_module(module_ns) {
+            await wait_for_topic_message(module_ns + '/weeder/status', 'actionlib_msgs/GoalStatusArray');
+        }
+
+        // async function get_triggered_exposure() {
+        //     const req = new ROSLIB.ServiceRequest({ command: 35, value: 0.0 });
+
+        //     await wait_for_service(camera_interface_srv);
+
+        //     return await new Promise((resolve) => {
+        //         camera_interface_srv.callService(req, (res) => {
+        //             if (res.success) {
+        //                 resolve(Number(res.response));
+        //             } else {
+        //                 resolve(NaN);
+        //             }
+        //         }, (err) => { resolve(NaN); });
+        //     });
+        // }
+
+        // async function set_exposure(event) {
+        //     event.target.disabled = true;
+
+        //     const req = new ROSLIB.ServiceRequest({ command: 25, value: Number(event.target.value) });
+
+        //     await wait_for_service(camera_interface_srv);
+
+        //     const result = await new Promise((resolve) => {
+        //         camera_interface_srv.callService(req, (res) => {
+        //             resolve(res.success);
+        //         }, (err) => { resolve(false); });
+        //     });
+
+        //     if (!result) { set_info("Unable to apply last exposure update"); }
+
+        //     event.target.disabled = false;
+        // }
+
+
+        // function create_image_url(topic, endpoint = 'stream', quality = 50) {
+
+        //     return '/image/' + endpoint + '?quality=' + quality + '&topic=' + topic;
+        // }
+
+
+        async function calibrate_unit(unit) {
+            const req = new ROSLIB.ServiceRequest({});
+
+            buttons_set_disabled(true);
+
+            let calibrate_unit = new ROSLIB.Service({ ros: ros, name: module_ns + "/unit" + unit + "/unit_calibration", serviceType: "std_srvs/Trigger" });
+            await wait_for_service(calibrate_unit);
+
+            const result = await new Promise((resolve, reject) => {
+                calibrate_unit.callService(req, (res) => {
+                    console.log(res);
+                    if (res.success){
+                        set_info('Unit' + unit + ' calibration result: ' + res.message, 10000);
+                    } else {
+                        set_info('Unit' + unit + ' calibration error: ' + res.message);
+                    }
+                    resolve(res);
+                }, (err) => {
+                    set_info('Unit' + unit + ' calibration error: ' + err);
+                    console.error(err);
+                    reject(err);
+                });
+            });
+
+            buttons_set_disabled(false);
+        }
+
+    </script>
+
+    <style>
+
+        html, body {
+            margin: 0;
+        }
+
+        .controls {
+            padding: 15px;
+        }
+
+        .controls.tl {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        .controls.tr {
+            position: absolute;
+            right: 0;
+            top: 0;
+        }
+
+        .controls.bl {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+        }
+
+        .controls.br {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+        }
+
+        .controls>div:not(:last-of-type) {
+            margin-bottom: 15px;
+        }
+
+        .controls button {
+            display: block;
+        }
+
+        .controls .calibrations button {
+            margin-bottom: 15px;
+        }
+
+        .danger {
+            color: #fff;
+            background-color: #dc3545;
+            border-color: #dc3545;
+            border-radius: .25rem;
+        }
+
+        .danger:disabled {
+            opacity: .65;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #info.hidden {
+            transition: opacity 200ms;
+            display: initial;
+            opacity: 0;
+        }
+
+        label input[type=number] {
+            display: inline-block;
+        }
+
+        #viz {
+            /* Compatibility with browsers that don't support dvh */
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #viz {
+            width: 100dvw;
+            height: 100dvh;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <span id="preload-info">Connecting with the module</span>
+
+    <main class="hidden">
+        <div class="controls tl">
+
+            <div>
+                <button class="action-btn" onclick="actionClient()">Target</button>
+                <!-- <button class="action-btn danger" onclick="actionClient(true)">Fire</button> -->
+                <!-- <span>|</span>
+                <label>
+                    Camera exposure
+                    <input id="camera_exposure" type="number" step="0.01" min="0.01" max="5"
+                        placeholder="Unknown exposure" />
+                    ms
+                </label> -->
+            </div>
+        </div>
+        <div class="controls tr">
+            <div class="calibrations">
+                <button class="action-btn danger" onclick="calibrate_unit(11)">Calibrate unit 11</button>
+                <button class="action-btn danger" onclick="calibrate_unit(12)">Calibrate unit 12</button>
+                <button class="action-btn danger" onclick="calibrate_unit(21)">Calibrate unit 21</button>
+                <button class="action-btn danger" onclick="calibrate_unit(22)">Calibrate unit 22</button>
+            </div>
+        </div>
+
+
+        <div class="controls bl">
+            <div><span id="info" class="hidden" ></span></div>
+
+            <div>
+                <label><input type="checkbox" id="unit_divisions_ckbx" checked> Show unit divisions</label>
+                <label><input type="checkbox" id="units_calib_ckbx" checked> Show unit calibrations</label>
+                <label><input type="checkbox" id="depth_ckbx" checked> Show depth estimation</label>
+                <label><input type="checkbox" id="unit_assignments_ckbx" checked> Show unit assignments</label>
+            </div>
+        </div>
+        <div id="viz"></div>
+    </main>
+
+    <script>
+        // TODO: Decide which controls should this page have
+
+        // async function configure_nn() {
+        //     const params = URL.parse(window.location).searchParams;
+
+        //     const change_nn_srv = new ROSLIB.Service({ ros: ros, name: module_ns + '/preburn/stereo/left/WeedDetection/change_nn', serviceType: 'earth_rover_detector_msgs/ChangeModel' });
+
+        //     const req = new ROSLIB.ServiceRequest({
+        //         model: {
+        //             model_path: '',
+        //             model_name: params.get('model_name') ?? 'meristem_20250625',
+        //             threshold: params.get('threshold') ?? 0.25,
+        //             hier_threshold: params.get('hier_threshold') ?? 0.5,
+        //             iou_threshold: params.get('iou_threshold') ?? 0.2
+        //         }
+        //     });
+
+        //     return new Promise((resolve, reject) => {
+        //         change_nn_srv.callService(req, (res) => {
+        //             resolve(res);
+        //         }, (err) => {
+        //             reject(err);
+        //         });
+        //     });
+        // }
+
+        var viewer = null;
+        var tfClient = null;
+        var urdf_obj = null;
+        var urdfModel = null;
+        var ground_scene = null;
+        var units_divisions = null;
+        var point_cloud = null;
+        var unit_calib_markers = null;
+        var unit_assignments = null;
+
+        ros.on('connection', async function () {
+            console.log('Connected to websocket server.');
+
+            const enable_socket_debug = false;
+
+            if (enable_socket_debug) {
+                var old_cb = ros.socket.onmessage;
+                ros.socket.onmessage = (e) => {
+
+                    try {
+
+                        if (e && e.data) {
+                            o = JSON.parse(e.data);
+                            console.log(o);
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                    old_cb(e);
+                };
+                var old_send = ros.socket.__proto__.send.bind(ros.socket);
+                ros.socket.__proto__.send = (e) => { console.log(JSON.parse(e)); old_send(e); };
+            }
+
+            console.log("Waiting module");
+            await wait_for_module(module_ns);
+
+
+            // try {
+            //     await configure_nn();
+            // } catch (err) {
+            //     document.getElementById("info").textContent = "An error has occurred preparing the module, contact support.";
+            //     console.error(err);
+            //     return;
+            // }
+
+            document.getElementById("preload-info").classList.add(["hidden"]);
+
+            document.querySelector("main").classList.remove(["hidden"]);
+
+
+            // const current_exposure = await get_triggered_exposure();
+
+            // if (isNaN(current_exposure)) {
+            //     console.log("Unable to retrieve current camera exposure");
+            //     document.getElementById("camera_exposure").value = "";
+            // } else {
+            //     document.getElementById("camera_exposure").value = current_exposure;
+            // }
+
+            // document.getElementById("camera_exposure").addEventListener("change", set_exposure, { passive: true });
+
+
+            let tfPrefix = module_ns.substring(1);
+
+
+            tfClient = new ROSLIB.TFClient({
+                ros: ros,
+                fixedFrame: tfPrefix + '/base_link',
+                rate: 10.0
+            });
+
+            const viz_elem = document.getElementById('viz');
+
+            viewer = new ROS3D.Viewer({
+                elem: viz_elem,
+                width: viz_elem.getBoundingClientRect().width,
+                height: viz_elem.getBoundingClientRect().height,
+                antialias: true,
+                background: '#999999',
+                cameraPose: { x: -1.75, y: -0.375, z: 0.3 }
+            });
+
+            const update_size = () => { viewer.resize(viz_elem.getBoundingClientRect().width, viz_elem.getBoundingClientRect().height) };
+            let observer = new ResizeObserver(update_size);
+            observer.observe(viz_elem)
+
+
+            const focus_distance = 0.368;
+
+
+            const weeder_width = 0.533;
+            // TODO: cellSize of hole metric unit (ex. 10cm)
+            const grid_config = { cellSize: weeder_width / 6, num_cells: 6 };
+            // const grid_config = { cellSize: 0.01, num_cells: 60 };
+
+            let g0 = new ROS3D.Grid({ color: '#ffff00', ...grid_config });
+            g0.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, -1), Math.PI / 2);
+            ground_scene = new ROS3D.SceneNode({
+                frameID: tfPrefix + '/weeder_bottom_frame',
+                tfClient: tfClient,
+                pose: new ROSLIB.Pose({ position: { z: -focus_distance } }),
+                object: g0
+            });
+
+            ground_scene.name = 'ground';
+
+
+            async function gen_grid_text(text, color) {
+                const text_geom = new THREE.TextBufferGeometry(text, {
+                    font: await get_font(),
+                    height: 0.00001,
+                    size: 0.03,
+                    curveSegments: 12
+                });
+
+                text_geom.computeBoundingBox();
+
+                const material3 = new THREE.MeshBasicMaterial({ color: color });
+                const text_obj = new THREE.Mesh(text_geom, material3);
+
+                text_obj.position.set(weeder_width / 2 - text_geom.boundingBox.max.x * 1.2, weeder_width / 2 - text_geom.boundingBox.max.y * 1.2, 0);
+
+                return text_obj;
+            }
+
+            ground_scene.children[0].add(await gen_grid_text('XY', ground_scene.children[0].children[0].material.color));
+
+
+            viewer.addObject(ground_scene);
+
+
+            let g1 = new ROS3D.Grid({ color: '#ff00ff', ...grid_config });
+            let g2 = new ROS3D.Grid({ color: '#00ffff', ...grid_config });
+            g1.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+            g2.quaternion.multiplyQuaternions(
+                new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2),
+                new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2)
+            );
+
+            g1.add(await gen_grid_text('ZX', g1.children[0].material.color));
+            g2.add(await gen_grid_text('YZ', g2.children[0].material.color));
+
+            units_divisions = new THREE.Group();
+            units_divisions.add(g1);
+            units_divisions.add(g2);
+
+            ground_scene.add(units_divisions);
+
+            // Enable the user to show/hide the units_divisions
+            document.getElementById('unit_divisions_ckbx').addEventListener("change", (evt) => {
+                units_divisions.visible = evt.target.checked;
+            }, { passive: true });
+
+
+            let cb = (msg) => {
+                var tf = new ROSLIB.Transform(msg);
+                var poseTransformed = new ROSLIB.Pose(ground_scene.pose);
+                poseTransformed.applyTransform(tf);
+
+                viewer.cameraControls.center.set(...Object.values(poseTransformed.position));
+                viewer.cameraControls.update();
+
+                ground_scene.tfClient.unsubscribe(ground_scene.frameID, cb);
+            };
+            ground_scene.tfClient.subscribe(ground_scene.frameID, cb);
+
+
+            async function gen_frame_text(text, color, scale) {
+                const text_geom = new THREE.TextBufferGeometry(text, {
+                    font: await get_font(),
+                    height: 0.00001,
+                    size: 0.13 * scale,
+                    curveSegments: 12
+                });
+
+                text_geom.computeBoundingBox();
+
+                const material3 = new THREE.MeshBasicMaterial({ color: color });
+                const text_obj = new THREE.Mesh(text_geom, material3);
+
+
+                text_obj.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
+                text_obj.position.set(- text_geom.boundingBox.max.y * 2, text_geom.boundingBox.max.x / 2, 0);
+
+                return text_obj;
+            }
+
+
+            new ROSLIB.Param({ ros: ros, name: module_ns + '/robot_description' }).get(async function (string) {
+
+                urdfModel = new ROSLIB.UrdfModel({ string: string });
+
+                urdf_obj = new ROS3D.Urdf({
+                    urdfModel: urdfModel,
+                    tfClient: tfClient,
+                    tfPrefix: tfPrefix
+                });
+                viewer.scene.add(urdf_obj);
+
+                urdf_obj.children[0].children.forEach(urdf_visual_elem => {
+                    urdf_visual_elem.material.transparent = true;
+                    urdf_visual_elem.material.opacity = 0.5;
+                });
+
+
+
+                const scale = 0.1;
+
+                const frames_2_show = [
+                    'unit', 'base_link', 'bottom_frame', 'middle_plate'
+                ]
+
+                const unit_frame_regex = /unit[12]{2}_frame/;
+
+                for (var link of Object.values(urdfModel.links).filter((link) => frames_2_show.some((f) => link.name.includes(f)))) {
+
+                    var frameID = tfPrefix + '/' + link.name;
+
+                    var ax = new ROS3D.TFAxes({
+                        frame_id: frameID,
+                        tfClient: tfClient,
+                        rootObject: viewer.scene,
+                        scale: scale
+                    });
+
+                    ax.sn.add(await gen_frame_text(link.name, '#ffffff', scale));
+
+                    if (link.name.match(unit_frame_regex)) {
+                        get_children_joints_for(urdfModel, link.name).forEach((joint) => {
+                            const m = new THREE.LineBasicMaterial({ color: 0xff9900 });
+                            const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(...Object.values(joint.origin.position))]);
+                            const line = new THREE.Line(g, m);
+                            ax.sn.add(line);
+                        });
+                    }
+
+                    // Enable if should be shown as in URDF before TF updates
+                    // ax.sn.visible = true;
+
+                    viewer.addObject(ax);
+                }
+            });
+
+
+            point_cloud = new THREE.Group();
+
+            viewer.addObject(point_cloud)
+
+            // Enable the user to show/hide the depth estimation
+            document.getElementById('depth_ckbx').addEventListener("change", (evt) => {
+                point_cloud.visible = evt.target.checked;
+            }, { passive: true });
+
+            new ImperfectPointCloud2({
+                ros: ros,
+                topic: module_ns + '/preburn/stereo/points2',
+                tfClient: tfClient,
+                rootObject: point_cloud,
+                material: { size: 0.0025 },
+                step: 4,
+                max_pts: 4096 * 4096
+            });
+
+
+
+            unit_calib_markers = new THREE.Group();
+
+            viewer.addObject(unit_calib_markers)
+
+
+            // Enable the user to show/hide the unit calibrations
+            document.getElementById('units_calib_ckbx').addEventListener("change", (evt) => {
+                unit_calib_markers.visible = evt.target.checked;
+            }, { passive: true });
+
+
+            new ROS3D.MarkerArrayClient({
+                ros: ros,
+                topic: module_ns + '/unit11/unit_calibration/markers',
+                tfClient: tfClient,
+                rootObject: unit_calib_markers
+            });
+            new ROS3D.MarkerArrayClient({
+                ros: ros,
+                topic: module_ns + '/unit12/unit_calibration/markers',
+                tfClient: tfClient,
+                rootObject: unit_calib_markers
+            });
+            new ROS3D.MarkerArrayClient({
+                ros: ros,
+                topic: module_ns + '/unit21/unit_calibration/markers',
+                tfClient: tfClient,
+                rootObject: unit_calib_markers
+            });
+            new ROS3D.MarkerArrayClient({
+                ros: ros,
+                topic: module_ns + '/unit22/unit_calibration/markers',
+                tfClient: tfClient,
+                rootObject: unit_calib_markers
+            });
+
+
+            unit_assignments = new THREE.Group();
+            viewer.addObject(unit_assignments)
+
+            // Enable the user to show/hide the unit_assignments
+            document.getElementById('unit_assignments_ckbx').addEventListener("change", (evt) => {
+                unit_assignments.visible = evt.target.checked;
+            }, { passive: true });
+
+            new ROS3D.MarkerArrayClient({
+                ros: ros,
+                topic: module_ns + '/debug/unit_assignments_markers',
+                tfClient: tfClient,
+                rootObject: unit_assignments
+            });
+        });
+
+        function get_children_joints_for(urdfModel, parent_name) {
+            return Object.values(urdfModel.joints).filter(j => j.parent == parent_name)
+        }
+
+
+        ros.connect('/rosbridge');
+
+        keepalive_topic = new ROSLIB.Topic({ ros: ros, name: module_ns + "/weeder/status", messageType: "actionlib_msgs/GoalStatusArray" });
+        keepalive_topic.subscribe((msg) => {  /* DO NOTHING */ });
+    </script>
+</body>
+
+</html>
